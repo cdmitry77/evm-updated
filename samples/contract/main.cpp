@@ -99,17 +99,18 @@ void append_argument(std::vector<uint8_t>& code, const uint256_t& arg)
 
 // Deploy the ERC20 contract defined in env, with total_supply tokens. Return
 // the address the contract was deployed to
-eevm::Address deploy_erc20_contract(
-  Environment& env, const uint256_t total_supply)
+eevm::Address deploy_contract(
+  Environment& env)
 {
   // Generate the contract address
   const auto contract_address = eevm::generate_address(env.owner_address, 0u);
 
   // Get the binary constructor of the contract
   auto contract_constructor = eevm::to_bytes(env.contract_definition["bin"]);
-
+  std::cout << "Contract constructor created: "
+            << eevm::to_hex_string(contract_constructor) << std::endl;
   // The constructor takes a single argument (total_supply) - append it
-  append_argument(contract_constructor, total_supply);
+  //append_argument(contract_constructor, total_supply);
 
   // Set this constructor as the contract's code body
   auto contract = env.gs.create(contract_address, 0u, contract_constructor);
@@ -117,6 +118,7 @@ eevm::Address deploy_erc20_contract(
   // Run a transaction to initialise this account
   auto result =
     run_and_check_result(env, env.owner_address, contract_address, {});
+  std::cout << "Deploy result: " << eevm::to_hex_string(result) << std::endl;
 
   // Result of running the compiled constructor is the code that should be the
   // contract's body (constructor will also have setup contract's Storage)
@@ -310,50 +312,36 @@ int main(int argc, char** argv)
 
   // Parse the contract definition from file
   const auto contracts_definition = nlohmann::json::parse(contract_fstream);
-  const auto all_contracts = contracts_definition["contracts"];
-  const auto erc20_definition = all_contracts["ERC20.sol:ERC20Token"];
+  const auto all_contracts = contracts_definition["contract"];
+  const auto erc20_definition = all_contracts["simple"];
 
   // Create environment
   eevm::SimpleGlobalState gs;
   Environment env{gs, owner_address, erc20_definition};
 
+  auto contractHashes = env.contract_definition["hashes"];
+
   // Deploy the ERC20 contract
-  const auto contract_address = deploy_erc20_contract(env, total_supply);
+  const auto contract_address = deploy_contract(env);
 
-  // Report initial state
-  print_erc20_state("-- Initial state --", env, contract_address, users);
-  std::cout << std::endl;
-
-  // Run a successful transaction
-  const auto first_transfer_amount = total_supply / 3;
-  const auto success = transfer(
-    env, contract_address, owner_address, alice, first_transfer_amount);
-  if (!success)
-  {
-    throw std::runtime_error("Expected transfer to succeed, but it failed");
+  int cnt = 1;
+  std::cout << "Deployed contract has following methods:" << std::endl;
+  for (auto a : contractHashes.object()) {
+    std::cout << cnt << ". " << a << std::endl;
+    ++cnt;
   }
+  std::cout << cnt << ". Finish" << std::endl;
 
-  // Trying to transfer more than is owned will fail (gracefully, returning
-  // false from the solidity function)
-  const auto failure = transfer(
-    env, contract_address, alice, owner_address, first_transfer_amount + 1);
-  if (failure)
-  {
-    throw std::runtime_error("Expected transfer to fail, but it succeeded");
+  while (true){
+    int value = 0;
+    std::cout << "Input your choice: "; 
+    std::cin >> value;
+    std::cout << std::endl;
+    if (value == cnt) {
+      break;
+    }
+
   }
-
-  // Report intermediate state
-  std::cout << std::endl;
-  print_erc20_state(
-    "-- After one transaction --", env, contract_address, users);
-  std::cout << std::endl;
-
-  // Create more users and run more transactions
-  run_random_transactions<20>(env, contract_address, users);
-
-  // Report final state
-  std::cout << std::endl;
-  print_erc20_state("-- Final state --", env, contract_address, users);
 
   return 0;
 }
