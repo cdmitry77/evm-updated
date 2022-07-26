@@ -22,7 +22,7 @@ using Addresses = std::vector<eevm::Address>;
 
 struct Environment
 {
-  eevm::GlobalState& gs;
+  eevm::SimpleGlobalState& gs;
   const eevm::Address& owner_address;
   const nlohmann::json& contract_definition;
 };
@@ -86,7 +86,18 @@ std::vector<uint8_t> run_and_check_result(
 
 // Modify code to append ABI-encoding of arg, suitable for passing to contract
 // execution
-void append_argument(std::vector<uint8_t>& code, const uint256_t& arg)
+void append_argument(std::vector<uint8_t>& code, const std::vector<uint8_t>& arg)
+{
+  // To ABI encode a function call with a uint256_t (or Address) argument,
+  // simply append the big-endian byte representation to the code (function
+  // selector, or bin). ABI-encoding for more complicated types is more
+  // complicated, so not shown in this sample.
+  const auto pre_size = code.size();
+  code.resize(pre_size + 32u);
+  std::memcpy(code.data() + pre_size, arg.data(), arg.size());
+}
+
+void append_argument256(std::vector<uint8_t>& code, const uint256_t& arg)
 {
   // To ABI encode a function call with a uint256_t (or Address) argument,
   // simply append the big-endian byte representation to the code (function
@@ -146,63 +157,63 @@ uint256_t get_total_supply(
 
 // Get the current token balance of target_address by calling balanceOf on
 // contract_address
-uint256_t get_balance(
-  Environment& env,
-  const eevm::Address& contract_address,
-  const eevm::Address& target_address)
-{
-  // Anyone can call balanceOf - prove this by asking from a randomly generated
-  // address
-  const auto caller = get_random_address();
+//uint256_t get_balance(
+//  Environment& env,
+//  const eevm::Address& contract_address,
+//  const eevm::Address& target_address)
+//{
+//  // Anyone can call balanceOf - prove this by asking from a randomly generated
+//  // address
+//  const auto caller = get_random_address();
+//
+//  auto function_call =
+//    eevm::to_bytes(env.contract_definition["hashes"]["balanceOf(address)"]);
+//
+//  append_argument(function_call, target_address);
+//
+//  const auto output =
+//    run_and_check_result(env, caller, contract_address, function_call);
+//
+//  return eevm::from_big_endian(output.data(), output.size());
+//}
 
-  auto function_call =
-    eevm::to_bytes(env.contract_definition["hashes"]["balanceOf(address)"]);
-
-  append_argument(function_call, target_address);
-
-  const auto output =
-    run_and_check_result(env, caller, contract_address, function_call);
-
-  return eevm::from_big_endian(output.data(), output.size());
-}
-
-// Transfer tokens from source_address to target_address by calling transfer on
-// contract_address
-bool transfer(
-  Environment& env,
-  const eevm::Address& contract_address,
-  const eevm::Address& source_address,
-  const eevm::Address& target_address,
-  const uint256_t& amount)
-{
-  // To transfer tokens, the caller must be the intended source address
-  auto function_call = eevm::to_bytes(
-    env.contract_definition["hashes"]["transfer(address,uint256)"]);
-
-  append_argument(function_call, target_address);
-  append_argument(function_call, amount);
-
-  std::cout << fmt::format(
-                 "Transferring {} from {} to {}",
-                 eevm::to_lower_hex_string(amount),
-                 eevm::to_checksum_address(source_address),
-                 eevm::to_checksum_address(target_address))
-            << std::endl;
-
-  const auto output =
-    run_and_check_result(env, source_address, contract_address, function_call);
-
-  // Output should be a bool in a 32-byte vector.
-  if (output.size() != 32 || (output[31] != 0 && output[31] != 1))
-  {
-    throw std::runtime_error("Unexpected output from call to transfer");
-  }
-
-  const bool success = output[31] == 1;
-  std::cout << (success ? " (succeeded)" : " (failed)") << std::endl;
-
-  return success;
-}
+//// Transfer tokens from source_address to target_address by calling transfer on
+//// contract_address
+//bool transfer(
+//  Environment& env,
+//  const eevm::Address& contract_address,
+//  const eevm::Address& source_address,
+//  const eevm::Address& target_address,
+//  const uint256_t& amount)
+//{
+//  // To transfer tokens, the caller must be the intended source address
+//  auto function_call = eevm::to_bytes(
+//    env.contract_definition["hashes"]["transfer(address,uint256)"]);
+//
+//  append_argument(function_call, target_address);
+//  append_argument(function_call, amount);
+//
+//  std::cout << fmt::format(
+//                 "Transferring {} from {} to {}",
+//                 eevm::to_lower_hex_string(amount),
+//                 eevm::to_checksum_address(source_address),
+//                 eevm::to_checksum_address(target_address))
+//            << std::endl;
+//
+//  const auto output =
+//    run_and_check_result(env, source_address, contract_address, function_call);
+//
+//  // Output should be a bool in a 32-byte vector.
+//  if (output.size() != 32 || (output[31] != 0 && output[31] != 1))
+//  {
+//    throw std::runtime_error("Unexpected output from call to transfer");
+//  }
+//
+//  const bool success = output[31] == 1;
+//  std::cout << (success ? " (succeeded)" : " (failed)") << std::endl;
+//
+//  return success;
+//}
 
 // Send N randomly generated token transfers. Some will be to new user addresses
 template <size_t N>
@@ -231,117 +242,310 @@ void run_random_transactions(
   }
 }
 
-// Print the total token supply and current token balance of each user, by
-// sending transactions to the given contract_address
-void print_erc20_state(
-  const std::string& heading,
-  Environment& env,
-  const eevm::Address& contract_address,
-  const Addresses& users)
-{
-  const auto total_supply = get_total_supply(env, contract_address);
-
-  using Balances = std::vector<std::pair<eevm::Address, uint256_t>>;
-  Balances balances;
-
-  for (const auto& user : users)
-  {
-    balances.emplace_back(
-      std::make_pair(user, get_balance(env, contract_address, user)));
-  }
-
-  std::cout << heading << std::endl;
-  std::cout << fmt::format(
-                 "Total supply of tokens is: {}",
-                 eevm::to_lower_hex_string(total_supply))
-            << std::endl;
-  std::cout << "User balances: " << std::endl;
-  for (const auto& pair : balances)
-  {
-    std::cout << fmt::format(
-      " {} owned by {}",
-      eevm::to_lower_hex_string(pair.second),
-      eevm::to_checksum_address(pair.first));
-    if (pair.first == env.owner_address)
-    {
-      std::cout << " (original contract creator)";
+eevm::Code toByteCode(eevm::SimpleStorage& st) {
+  eevm::Code res;
+  
+  for (int i = 0; i < 20; ++i) {
+    auto key = eevm::to_uint256(std::to_string(i));
+    auto val = st.load(key);
+    if (val != 0) { 
+        
     }
-    std::cout << std::endl;
   }
-  std::cout << std::string(heading.size(), '-') << std::endl;
+  return res;
 }
 
-// erc20/main
-// - Parse args
-// - Parse ERC20 contract definition
-// - Deploy ERC20 contract
-// - Transfer ERC20 tokens
-// - Print summary of state
-int main(int argc, char** argv)
+
+eevm::Code serializeState(const eevm::SimpleGlobalState::StateEntry& state)
 {
-  srand(time(nullptr));
-  std::string a;
-  std::cin >> a;
-  if (argc < 2)
+  eevm::Code res;
+  auto code = state.first.get_code();
+  size_t len = code.size();
+  auto storageCode = state.second.toByteCode();
+  res.resize(64 + 8 + len + 8 + storageCode.size());
+  eevm::to_big_endian(state.first.get_address(), res.data()); // address save
+  eevm::to_big_endian(state.first.get_balance(), res.data() + 32); // balance save
+  std::memcpy(res.data() + 64, &len, 8); // code len save
+  std::memcpy(res.data() + 64 + 8, code.data(), len); // code save
+  size_t nonce = state.first.get_nonce();
+  std::memcpy(res.data() + 64 + 8 + len, &nonce, 8); // nonce save
+  std::memcpy(res.data() + 64 + 8 + len + 8, storageCode.data(), storageCode.size()); // simplestorage save
+  return res;
+}
+
+
+void executeMethod(
+  Environment& env,
+  const eevm::Address& contract_address,
+  std::string methodName,
+  std::string methodSignature)
+{
+  std::cout << "Method " << methodName << " with address " << methodSignature << " will be executed. " << std::endl;
+  bool notCorrect = true;
+  int cSign;
+  while (notCorrect)
   {
-    std::cout << fmt::format("Usage: {} path/to/ERC20_combined.json", argv[0])
-              << std::endl;
-    return 1;
+      std::cout << "Input 0 to call from deployer or 1 for another caller: ";
+      std::cin >> cSign;
+      if (cSign == 0 or cSign ==1)
+      {
+        notCorrect = false;
+      }
   }
 
-  const uint256_t total_supply = 1000;
-  Addresses users;
-
-  // Create an account at a random address, representing the 'owner' who created
-  // the ERC20 contract (gets entire token supply initially)
-  const auto owner_address = get_random_address();
-  users.push_back(owner_address);
-
-  // Create one other initial user
-  const auto alice = get_random_address();
-  users.push_back(alice);
-
-  // Open the contract definition file
-  const auto contract_path = argv[1];
-  std::ifstream contract_fstream(contract_path);
-  if (!contract_fstream)
+  auto function_call = eevm::to_bytes(methodSignature);
+  auto posLeft = methodName.find('(');
+  auto posRight = methodName.find(')');
+  if (posRight - posLeft > 1)
   {
-    throw std::runtime_error(
-      fmt::format("Unable to open contract definition file {}", contract_path));
+    std::vector<std::string> methodArgs;
+    auto args = methodName.substr(posLeft + 1, posRight - posLeft - 1);
+    bool endArgs = false;
+    while (!endArgs)
+    {
+      auto posComma = args.find(',');
+      if (posComma == -1)
+      {
+        methodArgs.push_back(args);
+        break;
+      }
+      else
+      {
+        auto met = args.substr(0, posComma);
+        args = args.substr(posComma + 1, args.size());
+        methodArgs.push_back(met);
+      }
+    }
+    std::cout << "Next parameters should be entered: " << std::endl;
+    
+    for (auto a : methodArgs)
+    {
+      std::cout << a << ": ";
+      std::string b;
+      std::cin >> b;
+      //std::vector<uint8_t> arg = eevm::to_bytes(b);
+      uint256_t argAddr = eevm::to_uint256(b);
+      append_argument256(function_call, argAddr);
+    }
   }
+    const auto caller = cSign == 1 ? get_random_address() : env.owner_address;
+    std::cout << "Contract will be called from: " << eevm::address_to_hex_string(caller) << std::endl;
+    const auto output = run_and_check_result(env, caller, contract_address, function_call);
+    std::cout << "Execute result: " << eevm::to_hex_string(output) << std::endl;
+    const auto sMgs = serializeState(env.gs.getEntry(contract_address));
+    std::cout << "Current state: " << eevm::to_hex_string(sMgs) << std::endl;
+    //return eevm::from_big_endian(output.data(), output.size());
+  
+}
 
-  // Parse the contract definition from file
-  const auto contracts_definition = nlohmann::json::parse(contract_fstream);
-  const auto all_contracts = contracts_definition["contract"];
-  const auto erc20_definition = all_contracts["simple"];
 
-  // Create environment
-  eevm::SimpleGlobalState gs;
-  Environment env{gs, owner_address, erc20_definition};
-
-  auto contractHashes = env.contract_definition["hashes"];
-
-  // Deploy the ERC20 contract
-  const auto contract_address = deploy_contract(env);
-
-  int cnt = 1;
-  std::cout << "Deployed contract has following methods:" << std::endl;
-  for (auto a : contractHashes.object()) {
-    std::cout << cnt << ". " << a << std::endl;
-    ++cnt;
-  }
-  std::cout << cnt << ". Finish" << std::endl;
-
-  while (true){
-    int value = 0;
-    std::cout << "Input your choice: "; 
-    std::cin >> value;
-    std::cout << std::endl;
-    if (value == cnt) {
-      break;
+int printContractMenu(nlohmann::json& contractHashes) {
+    int cnt = 1;
+    std::cout << "0. Print(repeat) menu" << std::endl;
+    for (auto a : contractHashes.items())
+    {
+        std::cout << cnt << ". " << a.key() << std::endl;
+        ++cnt;
     }
 
+    std::cout << cnt << ". Get contract deployer" << std::endl;
+    ++cnt;
+    std::cout << cnt << ". Choose another contract" << std::endl;
+    ++cnt;
+    std::cout << cnt << ". Finish" << std::endl;
+    return cnt;
+}
+
+int printMainMenu(const eevm::SimpleGlobalState& gs) {
+    auto addresses = gs.getContractAddresses();
+    if (addresses.size() > 0) {
+        int cnt = 1;
+        std::cout << "CONTRACT MENU" << std::endl;
+        for (auto a : addresses) {
+          std::cout << cnt << ". " << eevm::address_to_hex_string(a) << std::endl;
+          ++cnt;
+        }
+        std::cout << cnt << ". Deploy new contract"<< std::endl;
+        ++cnt;
+        std::cout << cnt << ". Exit" << std::endl;
+        return cnt;
+    }
+    else {
+        std::cout << "There is no contracts in system. Deploy? - 1-Yes / 2-Exit" << std::endl;
+        return 2;
+    }
+
+}
+
+
+int mainMenuWorker(eevm::SimpleGlobalState& gs, std::map<eevm::Address, std::pair<eevm::Address, nlohmann::basic_json<>::value_type>>& contracts) {
+  int cnt = printMainMenu(gs);
+  int choice;
+  int incorrectChoiceCounter = 0;
+  while (true) {
+      std::cout << "Your choice: ";
+      std::cin >> choice;
+      std::cout << std::endl;
+      if (choice < cnt || choice > 1) {
+          break;
+      }
+      else {
+        std::cout << "Not correct choice!" << std::endl;
+        ++incorrectChoiceCounter;
+        if (incorrectChoiceCounter >= 3)             {
+            cnt = printMainMenu(gs);
+        }
+      }
+  }
+  if (choice == cnt)       {
+    return 0;
+  }
+  if (choice == cnt - 1) {
+    //deploy
+    // Create an account at a random address, representing the 'owner' who
+    // created
+    // the ERC20 contract (gets entire token supply initially)
+    const auto owner_address = get_random_address();
+    // Open the contract definition file
+    std::string contract_path;
+    nlohmann::json erc20_definition;
+    while (true) {
+        std::cout << "Input correct contract definition path: ";
+        std::cin >> contract_path;
+        std::cout << std::endl;
+        std::ifstream contract_fstream(contract_path);
+        if (!contract_fstream) {
+          std::cout << fmt::format(
+            "Unable to open contract definition file {}", contract_path);
+          continue;
+        }
+        const auto contracts_definition = nlohmann::json::parse(contract_fstream);
+        const auto all_contracts = contracts_definition["contract"];
+        erc20_definition = all_contracts["simple"];
+        break;
+    }
+
+
+
+    // Parse the contract definition from file
+
+    std::cout << "Contract will be deployed from: "
+              << eevm::address_to_hex_string(owner_address) << std::endl;
+    // Create environment
+    Environment env{gs, owner_address, erc20_definition};
+
+    auto contractHashes = env.contract_definition["hashes"];
+
+    // Deploy the ERC20 contract
+    const auto contract_address = deploy_contract(env);
+    contracts.emplace(contract_address, std::make_pair(owner_address, erc20_definition));
+    return 1;
+  }
+  //execute
+  eevm::Address contract_address = gs.getContractAddresses()[choice-1];
+  Environment env{gs, contracts[contract_address].first, contracts[contract_address].second};
+  auto contractHashes = env.contract_definition["hashes"];
+
+  std::cout << "Choosen contract has following methods:" << std::endl;
+  std::vector<std::string> contractMethods;
+  std::vector<std::string> contractSignatures;
+
+  for (auto a : contractHashes.items())
+  {
+    contractMethods.push_back(a.key());
+    contractSignatures.push_back(a.value());
+  }
+  int contractMenuCounter = printContractMenu(contractHashes);
+  while (true)
+  {
+    int value = 0;
+    std::cout << "Input your choice: ";
+    std::cin >> value;
+    if (value == contractMenuCounter - 1)
+    {
+      break;
+    }
+    if (value == contractMenuCounter)
+    {
+      return 0;
+    }
+    if (value == 0)
+    {
+      printContractMenu(contractHashes);
+    }
+    if (value > contractMenuCounter || value < 1)
+    {
+      continue;
+    }
+    try
+    {
+      executeMethod(
+        env,
+        contract_address,
+        contractMethods[value - 1],
+        contractSignatures[value - 1]);
+    }
+    catch (const std::runtime_error& e)
+    {
+      std::cout << e.what();
+    }
+    catch (const std::invalid_argument& e)
+    {
+      std::cout << e.what();
+    }
   }
 
-  return 0;
+}
+
+// - Contract main - runs different contracts depending of the input json-file
+int main(int argc, char** argv)
+{
+    //create global storage
+    eevm::SimpleGlobalState gs;
+    std::map<eevm::Address, std::pair<eevm::Address, nlohmann::basic_json<>::value_type>> contracts;
+    srand(time(nullptr));
+    int menuItem = 0;
+    while (mainMenuWorker(gs, contracts) != 0) {}
+
+    // Create an account at a random address, representing the 'owner' who created
+    // the ERC20 contract (gets entire token supply initially)
+    //const auto owner_address = get_random_address();
+
+    //// Open the contract definition file
+    //const auto contract_path = argv[1];
+    //std::ifstream contract_fstream(contract_path);
+    //if (!contract_fstream)
+    //{
+    //    std::cout << fmt::format("Unable to open contract definition file {}", contract_path);
+    //}
+
+    //// Parse the contract definition from file
+    //const auto contracts_definition = nlohmann::json::parse(contract_fstream);
+    //const auto all_contracts = contracts_definition["contract"];
+    //const auto erc20_definition = all_contracts["simple"];
+
+    //std::cout << "Contract will be deployed from: "
+    //        << eevm::address_to_hex_string(owner_address) << std::endl;
+    //// Create environment
+    //Environment env{gs, owner_address, erc20_definition};
+
+    //auto contractHashes = env.contract_definition["hashes"];
+
+    //// Deploy the ERC20 contract
+    //const auto contract_address = deploy_contract(env);
+
+    //std::cout << "Deployed contract has following methods:" << std::endl;
+    //std::vector<std::string> contractMethods;
+    //std::vector<std::string> contractSignatures;
+
+    //for (auto a : contractHashes.items())
+    //{
+    //contractMethods.push_back(a.key());
+    //contractSignatures.push_back(a.value());
+    //}
+    //int cnt = printContractMenu(contractHashes);
+
+
+
+    return 0;
 }

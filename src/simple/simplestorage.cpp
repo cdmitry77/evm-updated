@@ -50,6 +50,30 @@ namespace eevm
     return s == that.s;
   }
 
+  std::vector<uint8_t> SimpleStorage::toByteCode() const{
+    std::vector<uint8_t> res;
+    size_t cnt = 0;
+    for (const auto& p : s)
+    {
+      res.resize((cnt + 1) * 64);
+      eevm::to_big_endian(p.first, res.data() + cnt*2 * 32);
+      eevm::to_big_endian(p.second, res.data() + (cnt*2 + 1) * 32);
+      ++cnt;
+    }
+    return res;
+  }
+
+  void SimpleStorage::saveToDB() {
+
+  }
+
+
+  void SimpleStorage::codeToStorage(eevm::Storage& st, const std::vector<uint8_t>& data) {
+
+  }
+
+
+
   void to_json(nlohmann::json& j, const SimpleStorage& s)
   {
     j = nlohmann::json::object();

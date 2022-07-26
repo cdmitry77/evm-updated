@@ -19,6 +19,15 @@ namespace eevm
     return create(addr, 0, {});
   }
 
+  SimpleGlobalState::StateEntry SimpleGlobalState::getEntry(const Address& addr) {
+      if (accounts.find(addr) != accounts.end()) {
+        return accounts[addr];
+      }
+      else {
+        return SimpleGlobalState::StateEntry();
+      }
+  }
+
   AccountState SimpleGlobalState::create(
     const Address& addr, const uint256_t& balance, const Code& code)
   {
@@ -35,6 +44,14 @@ namespace eevm
   size_t SimpleGlobalState::num_accounts()
   {
     return accounts.size();
+  }
+
+  std::vector<eevm::Address> SimpleGlobalState::getContractAddresses() const {
+      std::vector<eevm::Address> res;
+      for (auto a : accounts) {
+          res.push_back(a.first);
+      }
+      return res;
   }
 
   const Block& SimpleGlobalState::get_current_block()

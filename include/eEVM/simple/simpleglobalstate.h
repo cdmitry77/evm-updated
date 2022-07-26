@@ -34,6 +34,8 @@ namespace eevm
 
     bool exists(const Address& addr);
     size_t num_accounts();
+    std::vector<eevm::Address> getContractAddresses() const;
+    StateEntry getEntry(const eevm::Address& addr);
 
     virtual const Block& get_current_block() override;
     virtual uint256_t get_block_hash(uint8_t offset) override;

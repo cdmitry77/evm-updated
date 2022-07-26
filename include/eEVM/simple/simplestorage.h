@@ -20,6 +20,7 @@ namespace eevm
   public:
     SimpleStorage() = default;
     SimpleStorage(const nlohmann::json& j);
+    SimpleStorage(const Storage& st);
 
     void store(const uint256_t& key, const uint256_t& value) override;
     uint256_t load(const uint256_t& key) override;
@@ -27,6 +28,10 @@ namespace eevm
     bool remove(const uint256_t& key) override;
 
     bool operator==(const SimpleStorage& that) const;
+
+    std::vector<uint8_t> toByteCode() const;
+    void saveToDB(); 
+    void codeToStorage(eevm::Storage& st, const std::vector<uint8_t>& data);
 
     friend void to_json(nlohmann::json&, const SimpleStorage&);
     friend void from_json(const nlohmann::json&, SimpleStorage&);
