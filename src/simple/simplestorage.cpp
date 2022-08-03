@@ -55,7 +55,7 @@ namespace eevm
     size_t cnt = 0;
     for (const auto& p : s)
     {
-      res.resize((cnt + 1) * 64);
+      res.reserve((cnt + 1) * 64);
       eevm::to_big_endian(p.first, res.data() + cnt*2 * 32);
       eevm::to_big_endian(p.second, res.data() + (cnt*2 + 1) * 32);
       ++cnt;
@@ -63,12 +63,36 @@ namespace eevm
     return res;
   }
 
-  void SimpleStorage::saveToDB() {
+  std::string SimpleStorage::to_hex_string_full(const uint256_t& v)
+  {
+    std::stringstream ss;
+    ss << "0x" << std::setfill('0') << std::setw(64) << intx::hex(v);
+    std::string res(ss.str());
+    return res;
+  }
 
+  std::string SimpleStorage::saveToDB() {
+    std::string res;
+    size_t cnt = 0;
+    res.reserve(s.size()*132);
+    for (const auto& p : s)
+    {
+      res += to_hex_string_full(p.first);
+      res += to_hex_string_full(p.second);
+      ++cnt;
+    }
+    return res;
   }
 
 
-  void SimpleStorage::codeToStorage(eevm::Storage& st, const std::vector<uint8_t>& data) {
+  void SimpleStorage::loadFromDB(eevm::SimpleStorage& st, const std::string& data) {
+    int cnt = 0;
+    while (cnt < data.size()) {
+      std::string cAddr(data.data() + 132 * cnt, 66);
+      std::string cData(data.data() + 132 * cnt + 66, 66);
+      
+        ++cnt;
+    }
 
   }
 

@@ -30,8 +30,9 @@ namespace eevm
     bool operator==(const SimpleStorage& that) const;
 
     std::vector<uint8_t> toByteCode() const;
-    void saveToDB(); 
-    void codeToStorage(eevm::Storage& st, const std::vector<uint8_t>& data);
+    static std::string to_hex_string_full(const uint256_t& v);
+    std::string saveToDB(); 
+    void loadFromDB(eevm::SimpleStorage& st, const std::string& data);
 
     friend void to_json(nlohmann::json&, const SimpleStorage&);
     friend void from_json(const nlohmann::json&, SimpleStorage&);

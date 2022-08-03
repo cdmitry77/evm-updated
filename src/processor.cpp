@@ -268,7 +268,8 @@ namespace eevm
 
     Opcode get_op() const
     {
-      return static_cast<Opcode>(ctxt->prog.code[ctxt->get_pc()]);
+      auto oc = ctxt->prog.code[ctxt->get_pc()];
+      return static_cast<Opcode>(oc);
     }
 
     uint256_t pop_addr(Stack& st)
@@ -396,8 +397,8 @@ namespace eevm
     void dispatch()
     {
       const auto op = get_op();
-      if (tr) // TODO: remove if from critical path
-        tr->add(ctxt->get_pc(), op, get_call_depth(), ctxt->s);
+      //if (tr) // TODO: remove if from critical path
+      //  tr->add(ctxt->get_pc(), op, get_call_depth(), ctxt->s);
 
       switch (op)
       {
@@ -617,7 +618,10 @@ namespace eevm
           selfdestruct();
           break;
         case Opcode::CREATE:
-          create();
+          try {
+            create();
+          }
+          catch (Exception& ex) {}
           break;
         case Opcode::CALL:
         case Opcode::CALLCODE:
@@ -1094,12 +1098,13 @@ namespace eevm
     void push()
     {
       const uint8_t bytes = get_op() - PUSH1 + 1;
-      const auto end = ctxt->get_pc() + bytes;
-      if (end < ctxt->get_pc())
+      auto pc = ctxt->get_pc();
+      const auto end = pc + bytes;
+      if (end < pc)
         throw Exception(
           ET::outOfBounds,
           "Integer overflow in push (" + to_string(end) + " < " +
-            to_string(ctxt->get_pc()) + ")");
+            to_string(pc) + ")");
 
       if (end >= ctxt->prog.code.size())
         throw Exception(
@@ -1108,7 +1113,8 @@ namespace eevm
             " >= " + to_string(ctxt->prog.code.size()) + ")");
 
       // TODO: parse immediate once and not every time
-      auto pc = ctxt->get_pc() + 1;
+      //auto pc = ctxt->get_pc() + 1;
+      ++pc;
       uint256_t imm = 0;
       for (int i = 0; i < bytes; i++)
         imm = (imm << 8) | ctxt->prog.code[pc++];
@@ -1199,7 +1205,14 @@ namespace eevm
       const auto size = ctxt->s.pop64();
 
       // invoke caller's return handler
-      ctxt->rh(copy_from_mem(offset, size));
+      try           {
+        ctxt->rh(copy_from_mem(offset, size));
+      }
+      catch (Exception ex)           {
+        throw(ET::outOfBounds,
+          "Memory access error");
+      }
+
       pop_context();
     }
 
@@ -1229,7 +1242,7 @@ namespace eevm
       auto initCode = copy_from_mem(offset, size);
 
       const auto newAddress =
-        generate_address(ctxt->acc.get_address(), ctxt->acc.get_nonce());
+        generate_address(ctxt->acc.get_address(), 7/*ctxt->acc.get_nonce()*/);
 
       // For contract accounts, the nonce counts the number of
       // contract-creations by this account

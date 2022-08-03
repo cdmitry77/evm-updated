@@ -84,17 +84,15 @@ std::vector<uint8_t> run_and_check_result(
   return exec_result.output;
 }
 
-// Modify code to append ABI-encoding of arg, suitable for passing to contract
-// execution
-void append_argument(std::vector<uint8_t>& code, const std::vector<uint8_t>& arg)
+void append_arguments(std::vector<uint8_t>& code, const std::vector<uint256_t>& arg)
 {
-  // To ABI encode a function call with a uint256_t (or Address) argument,
-  // simply append the big-endian byte representation to the code (function
-  // selector, or bin). ABI-encoding for more complicated types is more
-  // complicated, so not shown in this sample.
   const auto pre_size = code.size();
-  code.resize(pre_size + 32u);
-  std::memcpy(code.data() + pre_size, arg.data(), arg.size());
+  const auto additional_size = arg.size();
+  code.resize(pre_size + additional_size);
+  size_t cnt = 0;
+  for (auto& a : arg) {
+    eevm::to_big_endian(a, code.data() + pre_size + cnt * 32);
+  }
 }
 
 void append_argument256(std::vector<uint8_t>& code, const uint256_t& arg)
@@ -111,20 +109,18 @@ void append_argument256(std::vector<uint8_t>& code, const uint256_t& arg)
 // Deploy the ERC20 contract defined in env, with total_supply tokens. Return
 // the address the contract was deployed to
 eevm::Address deploy_contract(
-  Environment& env)
+  Environment& env, std::vector<uint256_t> contractParameters, uint256_t contractBalance, uint64_t nonce)
 {
   // Generate the contract address
-  const auto contract_address = eevm::generate_address(env.owner_address, 0u);
+  const auto contract_address = eevm::generate_address(env.owner_address, nonce);
 
   // Get the binary constructor of the contract
   auto contract_constructor = eevm::to_bytes(env.contract_definition["bin"]);
-  std::cout << "Contract constructor created: "
-            << eevm::to_hex_string(contract_constructor) << std::endl;
-  // The constructor takes a single argument (total_supply) - append it
-  //append_argument(contract_constructor, total_supply);
+  append_arguments(contract_constructor, contractParameters);
+
 
   // Set this constructor as the contract's code body
-  auto contract = env.gs.create(contract_address, 0u, contract_constructor);
+  auto contract = env.gs.create(contract_address, contractBalance, contract_constructor);
 
   // Run a transaction to initialise this account
   auto result =
@@ -138,109 +134,6 @@ eevm::Address deploy_contract(
   return contract.acc.get_address();
 }
 
-// Get the total token supply by calling totalSupply on the contract_address
-uint256_t get_total_supply(
-  Environment& env, const eevm::Address& contract_address)
-{
-  // Anyone can call totalSupply - prove this by asking from a randomly
-  // generated address
-  const auto caller = get_random_address();
-
-  const auto function_call =
-    eevm::to_bytes(env.contract_definition["hashes"]["totalSupply()"]);
-
-  const auto output =
-    run_and_check_result(env, caller, contract_address, function_call);
-
-  return eevm::from_big_endian(output.data(), output.size());
-}
-
-// Get the current token balance of target_address by calling balanceOf on
-// contract_address
-//uint256_t get_balance(
-//  Environment& env,
-//  const eevm::Address& contract_address,
-//  const eevm::Address& target_address)
-//{
-//  // Anyone can call balanceOf - prove this by asking from a randomly generated
-//  // address
-//  const auto caller = get_random_address();
-//
-//  auto function_call =
-//    eevm::to_bytes(env.contract_definition["hashes"]["balanceOf(address)"]);
-//
-//  append_argument(function_call, target_address);
-//
-//  const auto output =
-//    run_and_check_result(env, caller, contract_address, function_call);
-//
-//  return eevm::from_big_endian(output.data(), output.size());
-//}
-
-//// Transfer tokens from source_address to target_address by calling transfer on
-//// contract_address
-//bool transfer(
-//  Environment& env,
-//  const eevm::Address& contract_address,
-//  const eevm::Address& source_address,
-//  const eevm::Address& target_address,
-//  const uint256_t& amount)
-//{
-//  // To transfer tokens, the caller must be the intended source address
-//  auto function_call = eevm::to_bytes(
-//    env.contract_definition["hashes"]["transfer(address,uint256)"]);
-//
-//  append_argument(function_call, target_address);
-//  append_argument(function_call, amount);
-//
-//  std::cout << fmt::format(
-//                 "Transferring {} from {} to {}",
-//                 eevm::to_lower_hex_string(amount),
-//                 eevm::to_checksum_address(source_address),
-//                 eevm::to_checksum_address(target_address))
-//            << std::endl;
-//
-//  const auto output =
-//    run_and_check_result(env, source_address, contract_address, function_call);
-//
-//  // Output should be a bool in a 32-byte vector.
-//  if (output.size() != 32 || (output[31] != 0 && output[31] != 1))
-//  {
-//    throw std::runtime_error("Unexpected output from call to transfer");
-//  }
-//
-//  const bool success = output[31] == 1;
-//  std::cout << (success ? " (succeeded)" : " (failed)") << std::endl;
-//
-//  return success;
-//}
-
-// Send N randomly generated token transfers. Some will be to new user addresses
-template <size_t N>
-void run_random_transactions(
-  Environment& env, const eevm::Address& contract_address, Addresses& users)
-{
-  const auto total_supply = get_total_supply(env, contract_address);
-  const auto transfer_max = (2 * total_supply) / N;
-
-  for (size_t i = 0; i < N; ++i)
-  {
-    const auto from_index = rand_range(users.size());
-    auto to_index = rand_range(users.size());
-
-    // Occasionally create new users and transfer to them. Also avoids
-    // self-transfer
-    if (from_index == to_index)
-    {
-      to_index = users.size();
-      users.push_back(get_random_address());
-    }
-
-    const auto amount = get_random_uint256() % transfer_max;
-
-    transfer(env, contract_address, users[from_index], users[to_index], amount);
-  }
-}
 
 eevm::Code toByteCode(eevm::SimpleStorage& st) {
   eevm::Code res;
@@ -332,8 +225,8 @@ void executeMethod(
     std::cout << "Contract will be called from: " << eevm::address_to_hex_string(caller) << std::endl;
     const auto output = run_and_check_result(env, caller, contract_address, function_call);
     std::cout << "Execute result: " << eevm::to_hex_string(output) << std::endl;
-    const auto sMgs = serializeState(env.gs.getEntry(contract_address));
-    std::cout << "Current state: " << eevm::to_hex_string(sMgs) << std::endl;
+    //const auto sMgs = serializeState(env.gs.getEntry(contract_address));
+    //std::cout << "Current state: " << eevm::to_hex_string(sMgs) << std::endl;
     //return eevm::from_big_endian(output.data(), output.size());
   
 }
@@ -341,6 +234,7 @@ void executeMethod(
 
 int printContractMenu(nlohmann::json& contractHashes) {
     int cnt = 1;
+    std::cout << "Contract MENU" << std::endl;
     std::cout << "0. Print(repeat) menu" << std::endl;
     for (auto a : contractHashes.items())
     {
@@ -358,25 +252,213 @@ int printContractMenu(nlohmann::json& contractHashes) {
 
 int printMainMenu(const eevm::SimpleGlobalState& gs) {
     auto addresses = gs.getContractAddresses();
-    if (addresses.size() > 0) {
-        int cnt = 1;
-        std::cout << "CONTRACT MENU" << std::endl;
-        for (auto a : addresses) {
-          std::cout << cnt << ". " << eevm::address_to_hex_string(a) << std::endl;
-          ++cnt;
-        }
-        std::cout << cnt << ". Deploy new contract"<< std::endl;
+    int cnt = 1;
+    std::cout << "MAIN MENU"
+            << (addresses.size() == 0 ? "(No contracts)" : "") << std::endl;
+    for (auto a : addresses) {
+        std::cout << cnt << ". " << eevm::address_to_hex_string(a) << std::endl;
         ++cnt;
-        std::cout << cnt << ". Exit" << std::endl;
-        return cnt;
     }
-    else {
-        std::cout << "There is no contracts in system. Deploy? - 1-Yes / 2-Exit" << std::endl;
-        return 2;
-    }
+    std::cout << cnt << ". Deploy new contract"<< std::endl;
+    ++cnt;
+    std::cout << cnt << ". Exit" << std::endl;
+    ++cnt;
+    std::cout << cnt << ". Open states" << std::endl;
+    ++cnt;
+    std::cout << cnt << ". Save states" << std::endl;
+    return cnt;
+
+
+}
+template <typename T>
+std::string dec2hex(T i)
+{
+  std::stringstream ss;
+  ss << "0x" << std::setfill('0') << std::setw(sizeof(T) * 2) << std::hex
+         << i;
+  std::string res(ss.str());
+  return res;
 
 }
 
+size_t hex2dec(std::string hex_value)
+{
+  size_t decimal_value;
+  std::stringstream ss;
+    ss << hex_value; // std::string hex_value
+    ss >> std::hex >> decimal_value; // int decimal_value
+    return decimal_value;
+}
+    
+
+void openSavedContracts(
+  eevm::SimpleGlobalState& gs,
+  std::map<
+    eevm::Address,
+    std::pair<eevm::Address, nlohmann::basic_json<>::value_type>>& contracts)
+{
+  auto contracts_path = "_contracts.txt";
+  std::ifstream contract_fstream(contracts_path);
+  if (!contract_fstream.is_open())
+  {
+    std::cout << fmt::format(
+      "Contracts will not be loaded: Unable to open contract's description "
+      "file {}",
+      contracts_path);
+    return;
+  }
+  size_t cnt = 0;
+  std::string cSize;
+  cSize.reserve(18);
+  contract_fstream.get(cSize.data(), 19);
+  size_t states_count = eevm::to_uint64(cSize);
+
+  while (cnt < states_count)
+  {
+    std::string addr1;
+    addr1.reserve(42);
+    std::string addr2;
+    addr2.reserve(42);
+    std::string cLen;
+    cLen.reserve(18);
+    contract_fstream.get(addr1.data(), 43);
+    //if (addr1.size() == 0)         {
+    //  break;
+    //}
+    contract_fstream.get(addr2.data(), 43);
+    contract_fstream.get(cLen.data(), 19);
+    std::string contract_string;
+    size_t contr_len = eevm::to_uint64(cLen);
+    contract_string.resize(contr_len);
+    contract_fstream.get(contract_string.data(), contr_len+1);
+    auto contract_address = eevm::to_uint256(addr1);
+    auto owner_address = eevm::to_uint256(addr2);
+    auto contract_def = nlohmann::json::parse(contract_string);
+    //if (contracts.find(contract_address) != contracts.end())         {
+      contracts.emplace(contract_address, std::make_pair(owner_address, contract_def));
+    //}
+
+    ++cnt;
+  }
+  contract_fstream.close();
+  auto state_path = "_states.txt";
+  std::ifstream statesStream(state_path);
+  if (!statesStream.is_open())
+  {
+    std::cout << fmt::format(
+      "Contracts will not be loaded: Unable to open contract's description "
+      "file {}",
+      state_path);
+    return;
+  }
+  cnt = 0;
+  cSize.clear();
+  cSize.reserve(18);
+  statesStream.get(cSize.data(), 19);
+  states_count = eevm::to_uint64(cSize);
+  // Storage translation
+  while (cnt < states_count)
+  {
+    eevm::SimpleGlobalState::StateEntry entry;
+    std::string addr;
+    addr.resize(42);
+    statesStream.get(addr.data(), 43);
+    auto addrBin = eevm::to_uint256(addr);
+    entry.first.set_address(addrBin);
+
+    std::string bal;
+    bal.resize(66);
+    statesStream.get(bal.data(), 67);
+    entry.first.set_balance(eevm::to_uint256(bal));
+
+    std::string cLen;
+    cLen.resize(18);
+    statesStream.get(cLen.data(), 19);
+    size_t len = eevm::to_uint64(cLen);
+
+    std::string codeRaw;
+    codeRaw.resize(len);
+    statesStream.get(codeRaw.data(), len + 1u);
+    auto codeNet = eevm::to_bytes(codeRaw);
+    entry.first.set_code(std::move(codeNet));
+
+    std::string cNonce;
+    cNonce.resize(18);
+    statesStream.get(cNonce.data(), 19);
+    entry.first.set_nonce(eevm::to_uint64(cNonce));
+    //Storage from string translation
+    std::string cStorageLen;
+    cStorageLen.reserve(18);
+
+    statesStream.get(cStorageLen.data(), 19);
+    size_t storageLen = eevm::to_uint64(cStorageLen) / 132;
+    size_t sCounter = 0;
+    while (sCounter < storageLen) {
+      std::string sKey;
+      sKey.resize(66);
+      statesStream.get(sKey.data(), 67);
+      std::string sData;
+      sData.resize(66);
+      statesStream.get(sData.data(), 67);
+      entry.second.store(eevm::to_uint256(sKey), eevm::to_uint256(sData));
+
+      ++sCounter;
+    }
+    if (!gs.exists(addrBin)) {
+      gs.insert(entry);
+    }
+    ++cnt;
+  }
+  statesStream.close();
+}
+
+
+
+void saveCurrentContracts(
+  eevm::SimpleGlobalState& gs,
+  std::map<
+    eevm::Address,
+    std::pair<eevm::Address, nlohmann::basic_json<>::value_type>>& contracts) {
+    auto contracts_path = "_contracts.txt";
+  auto ContractsStream = std::ofstream(contracts_path);
+  auto fSize = dec2hex(contracts.size());
+  ContractsStream << fSize; 
+  for (auto cont : contracts)       {
+    auto addr1 = eevm::address_to_hex_string(cont.first);
+    auto addr2 = eevm::address_to_hex_string(cont.second.first);
+    auto contr = cont.second.second.dump();
+    auto cSize = dec2hex(contr.size());
+    ContractsStream << addr1 
+                    << addr2
+                    << cSize << contr;
+  }
+  ContractsStream.close();
+  auto state_path = "_states.txt";
+  auto statesStream = std::ofstream(state_path);
+  auto addrs = gs.getContractAddresses();
+  auto aSize = dec2hex(addrs.size());
+  statesStream << aSize; 
+  for (auto addr : addrs) {
+    auto entry = gs.getEntry(addr);
+    statesStream << eevm::address_to_hex_string(entry.first.get_address())
+                 << eevm::SimpleStorage::to_hex_string_full(entry.first.get_balance());
+    auto codeStr = eevm::to_hex_string(entry.first.get_code());
+    auto codeLen = dec2hex(codeStr.size());
+    auto nonce = entry.first.get_nonce();
+    statesStream << codeLen << codeStr
+                 << dec2hex(nonce);
+    auto storageStr = entry.second.saveToDB();
+    auto storageLen = dec2hex(storageStr.size());
+    statesStream << storageLen << storageStr;
+  }
+  statesStream.close();
+}
+
+
+std::vector<std::string> getConstructorParameters(nlohmann::json contactDef) {
+  std::vector<std::string> res;
+  return res;
+}
 
 int mainMenuWorker(eevm::SimpleGlobalState& gs, std::map<eevm::Address, std::pair<eevm::Address, nlohmann::basic_json<>::value_type>>& contracts) {
   int cnt = printMainMenu(gs);
@@ -397,10 +479,23 @@ int mainMenuWorker(eevm::SimpleGlobalState& gs, std::map<eevm::Address, std::pai
         }
       }
   }
-  if (choice == cnt)       {
+  if (choice == cnt-2) {
+
     return 0;
   }
-  if (choice == cnt - 1) {
+  if (choice == cnt) {
+      //save global state
+    saveCurrentContracts(gs, contracts);
+      return 1;
+  }
+  if (choice == cnt - 1)
+  {
+    // save global state
+    openSavedContracts(gs, contracts);
+    return 1;
+  }
+
+  if (choice == cnt - 3) {
     //deploy
     // Create an account at a random address, representing the 'owner' who
     // created
@@ -408,7 +503,7 @@ int mainMenuWorker(eevm::SimpleGlobalState& gs, std::map<eevm::Address, std::pai
     const auto owner_address = get_random_address();
     // Open the contract definition file
     std::string contract_path;
-    nlohmann::json erc20_definition;
+    nlohmann::json contract_def;
     while (true) {
         std::cout << "Input correct contract definition path: ";
         std::cin >> contract_path;
@@ -421,7 +516,7 @@ int mainMenuWorker(eevm::SimpleGlobalState& gs, std::map<eevm::Address, std::pai
         }
         const auto contracts_definition = nlohmann::json::parse(contract_fstream);
         const auto all_contracts = contracts_definition["contract"];
-        erc20_definition = all_contracts["simple"];
+        contract_def = all_contracts["simple"];
         break;
     }
 
@@ -432,13 +527,16 @@ int mainMenuWorker(eevm::SimpleGlobalState& gs, std::map<eevm::Address, std::pai
     std::cout << "Contract will be deployed from: "
               << eevm::address_to_hex_string(owner_address) << std::endl;
     // Create environment
-    Environment env{gs, owner_address, erc20_definition};
+    Environment env{gs, owner_address, contract_def};
+    auto contructorParameters = getConstructorParameters(contract_def);
 
     auto contractHashes = env.contract_definition["hashes"];
 
-    // Deploy the ERC20 contract
-    const auto contract_address = deploy_contract(env);
-    contracts.emplace(contract_address, std::make_pair(owner_address, erc20_definition));
+    // Deploy the contract
+    std::vector<uint256_t> params;
+    const auto contract_address = deploy_contract(env, params, 0u, 0u);
+    contracts.emplace(
+      contract_address, std::make_pair(owner_address, contract_def));
     return 1;
   }
   //execute
