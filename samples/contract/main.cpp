@@ -5,6 +5,7 @@
 #include "eEVM/processor.h"
 #include "eEVM/simple/simpleglobalstate.h"
 
+#include <exception>
 #include <cassert>
 #include <fmt/format_header_only.h>
 #include <fstream>
@@ -14,11 +15,18 @@
 #include <sstream>
 #include <vector>
 
+
+
 ///////////////////////////////////////////////////////////////////////////////
 //
 // Util typedefs and functions
 //
 using Addresses = std::vector<eevm::Address>;
+
+enum ParamTypes : uint8_t {
+    uint256,
+    bytes
+};
 
 struct Environment
 {
@@ -87,11 +95,12 @@ std::vector<uint8_t> run_and_check_result(
 void append_arguments(std::vector<uint8_t>& code, const std::vector<uint256_t>& arg)
 {
   const auto pre_size = code.size();
-  const auto additional_size = arg.size();
+  const auto additional_size = arg.size()*32;
   code.resize(pre_size + additional_size);
   size_t cnt = 0;
   for (auto& a : arg) {
     eevm::to_big_endian(a, code.data() + pre_size + cnt * 32);
+    ++cnt;
   }
 }
 
@@ -455,8 +464,61 @@ void saveCurrentContracts(
 }
 
 
-std::vector<std::string> getConstructorParameters(nlohmann::json contactDef) {
-  std::vector<std::string> res;
+std::vector<ParamTypes> getConstructorParameters(nlohmann::json contactDef)
+{
+  std::vector<ParamTypes> res;
+  auto params = std::string(contactDef["constructor"]);
+  if (params.size() > 0) {
+    while (true) {
+        auto commaPos = params.find(",");
+        if (commaPos != std::string::npos)         {
+            std::string p = params.substr(0, commaPos);
+            params = params.substr(commaPos + 1, params.size() - commaPos - 1);
+            if (p == "uint256")                 {
+                res.push_back(ParamTypes::uint256);
+            }
+            if (p == "bytes")
+            {
+              res.push_back(ParamTypes::bytes);
+            }
+            
+        }
+        else         {
+          if (params == "uint256")
+          {
+            res.push_back(ParamTypes::uint256);
+          }
+          if (params == "bytes")
+          {
+            res.push_back(ParamTypes::bytes);
+          }
+          break;
+        }
+    }
+  }
+  return res;
+}
+
+
+
+uint256_t inputUint256(ParamTypes param)
+{
+  uint256_t res;
+  while (true)       {
+      std::string parameter;
+      std::cout << "uint256: ";
+      std::cin >> parameter;
+      std::cout << std::endl;
+      try {
+        res = eevm::to_uint256(parameter);
+      }
+      catch( int ) {
+        continue;
+      }
+      
+      break;
+  }
+
   return res;
 }
 
@@ -474,7 +536,7 @@ int mainMenuWorker(eevm::SimpleGlobalState& gs, std::map<eevm::Address, std::pai
       else {
         std::cout << "Not correct choice!" << std::endl;
         ++incorrectChoiceCounter;
-        if (incorrectChoiceCounter >= 3)             {
+        if (incorrectChoiceCounter >= 3) {
             cnt = printMainMenu(gs);
         }
       }
@@ -529,11 +591,26 @@ int mainMenuWorker(eevm::SimpleGlobalState& gs, std::map<eevm::Address, std::pai
     // Create environment
     Environment env{gs, owner_address, contract_def};
     auto contructorParameters = getConstructorParameters(contract_def);
+    std::vector<uint256_t> params;
+    if (contructorParameters.size() > 0) {
+      std::cout << "Contract needs next parameters: ";
+        for (const auto& p : contructorParameters) {
+            switch (p) {
+              case ParamTypes::uint256:
+                params.push_back(inputUint256(p));
+                continue;
+              case ParamTypes::bytes:
+              default:
+                continue;
+          }
+          
 
+
+      }
+    }
     auto contractHashes = env.contract_definition["hashes"];
 
     // Deploy the contract
-    std::vector<uint256_t> params;
     const auto contract_address = deploy_contract(env, params, 0u, 0u);
     contracts.emplace(
       contract_address, std::make_pair(owner_address, contract_def));
