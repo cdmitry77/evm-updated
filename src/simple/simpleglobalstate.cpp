@@ -61,6 +61,7 @@ namespace eevm
 
   uint256_t SimpleGlobalState::get_block_hash(uint8_t offset)
   {
+    (void) offset;
     return 0u;
   }
 
@@ -69,6 +70,7 @@ namespace eevm
     const auto ib = accounts.insert(std::make_pair(p.first.get_address(), p));
 
     assert(ib.second);
+    (void)ib;
   }
 
   bool operator==(const SimpleGlobalState& l, const SimpleGlobalState& r)

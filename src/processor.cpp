@@ -315,8 +315,9 @@ namespace eevm
         dst.resize(lastDst);
 
       const auto lastSrc = offSrc + size;
+       
       const auto endSrc =
-        min(lastSrc, static_cast<decltype(lastSrc)>(src.size()));
+        min(lastSrc, /*static_cast<decltype(lastSrc)>(*/src.size());
       uint64_t remaining;
       if (endSrc > offSrc)
       {
@@ -1208,9 +1209,8 @@ namespace eevm
       try           {
         ctxt->rh(copy_from_mem(offset, size));
       }
-      catch (Exception ex)           {
-        throw(ET::outOfBounds,
-          "Memory access error");
+      catch (const Exception& ex)           {
+        throw(Exception(ET::outOfBounds, "Memory access error"));
       }
 
       pop_context();

@@ -206,7 +206,7 @@ void executeMethod(
     while (!endArgs)
     {
       auto posComma = args.find(',');
-      if (posComma == -1)
+      if (posComma == -1u)
       {
         methodArgs.push_back(args);
         break;
@@ -503,6 +503,7 @@ std::vector<ParamTypes> getConstructorParameters(nlohmann::json contactDef)
 
 uint256_t inputUint256(ParamTypes param)
 {
+  (void) param;
   uint256_t res;
   while (true)       {
       std::string parameter;
@@ -608,7 +609,7 @@ int mainMenuWorker(eevm::SimpleGlobalState& gs, std::map<eevm::Address, std::pai
 
       }
     }
-    auto contractHashes = env.contract_definition["hashes"];
+    //auto contractHashes = env.contract_definition["hashes"];
 
     // Deploy the contract
     const auto contract_address = deploy_contract(env, params, 0u, 0u);
@@ -669,17 +670,19 @@ int mainMenuWorker(eevm::SimpleGlobalState& gs, std::map<eevm::Address, std::pai
       std::cout << e.what();
     }
   }
-
+  return 0;
 }
 
 // - Contract main - runs different contracts depending of the input json-file
 int main(int argc, char** argv)
 {
+    (void) argc;
+    (void) argv;
     //create global storage
     eevm::SimpleGlobalState gs;
     std::map<eevm::Address, std::pair<eevm::Address, nlohmann::basic_json<>::value_type>> contracts;
     srand(time(nullptr));
-    int menuItem = 0;
+    //int menuItem = 0;
     while (mainMenuWorker(gs, contracts) != 0) {}
 
     // Create an account at a random address, representing the 'owner' who created

@@ -138,6 +138,7 @@ uint256_t get_value(
 
 eevm::Code execute(Environment& env, const eevm::Address& contract_address, std::string methodName, std::string params)
 {
+  (void) params;
   // Anyone can call balanceOf - prove this by asking from a randomly generated
   // address
   const auto caller = get_random_address();
@@ -189,6 +190,8 @@ uint256_t dec_value(Environment& env, const eevm::Address& contract_address)
 
 int main(int argc, char** argv)
 {
+  (void) argc;
+  (void) argv;
   //std::string a;
   //std::cin >> a;
   // Create random addresses for sender and contract
@@ -202,8 +205,8 @@ int main(int argc, char** argv)
 
   std::generate(
     raw_address.begin(), raw_address.end(), []() { return rand(); });
-  const eevm::Address to =
-    eevm::from_big_endian(raw_address.data(), raw_address.size());
+  //const eevm::Address to =
+    //eevm::from_big_endian(raw_address.data(), raw_address.size());
 
   const auto contract_path = "contract.json";
   std::ifstream contract_fstream(contract_path);

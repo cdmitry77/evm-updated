@@ -86,14 +86,15 @@ namespace eevm
 
 
   void SimpleStorage::loadFromDB(eevm::SimpleStorage& st, const std::string& data) {
-    int cnt = 0;
+    
+    size_t cnt = 0;
     while (cnt < data.size()) {
       std::string cAddr(data.data() + 132 * cnt, 66);
       std::string cData(data.data() + 132 * cnt + 66, 66);
       
         ++cnt;
     }
-
+    (void) st;
   }
 
 

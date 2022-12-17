@@ -32,6 +32,8 @@ void run_test_case(
   const bool checkLogs,
   const bool disasm = true)
 {
+  (void) checkLogs;
+  (void) disasm;
   constexpr auto env_var = "C:\\dev\\eEVM\\eEVM\\3rdparty\\test_cases";
   auto test_dir = getenv(env_var);
   string testPath = fileName;

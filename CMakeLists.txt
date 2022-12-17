@@ -64,7 +64,7 @@ add_library(eevm STATIC
   ${EEVM_CORE_SRCS}
   ${KECCAK_SOURCES}
 )
-target_include_directories(eevm PRIVATE
+target_include_directories(eevm PUBLIC
   ${EEVM_INCLUDE_DIRS}
 )
 target_link_libraries(eevm
@@ -81,7 +81,7 @@ add_executable(eevm_tests
   tests/rlp.cpp
   ${EEVM_SIMPLE_SRCS}
 )
-target_include_directories(eevm_tests PRIVATE
+target_include_directories(eevm_tests PUBLIC
   ${EEVM_INCLUDE_DIRS}
 )
 target_compile_options(eevm_tests PRIVATE ${COVERAGE_FLAGS})

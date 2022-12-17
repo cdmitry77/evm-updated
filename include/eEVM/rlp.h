@@ -534,6 +534,8 @@ namespace eevm
       inline std::tuple<> decode_tuple(
         const uint8_t*& data, size_t& size, std::tuple<>)
       {
+	(void) data;
+  	(void) size;	
         return std::make_tuple();
       }
 
