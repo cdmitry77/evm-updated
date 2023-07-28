@@ -467,7 +467,12 @@ void saveCurrentContracts(
 std::vector<ParamTypes> getConstructorParameters(nlohmann::json contactDef)
 {
   std::vector<ParamTypes> res;
-  auto params = std::string(contactDef["constructor"]);
+  auto constructorOnly = contactDef["constructor"];
+  if (constructorOnly == nullptr) {
+    std::cout << "No constructor parameters" << std::endl;
+    return res;
+  }
+  auto params = std::string(constructorOnly);
   if (params.size() > 0) {
     while (true) {
         auto commaPos = params.find(",");

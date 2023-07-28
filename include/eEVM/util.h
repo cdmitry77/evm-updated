@@ -70,7 +70,7 @@ namespace eevm
   inline KeccakHash keccak_256(const uint8_t* begin, size_t byte_len)
   {
     KeccakHash h;
-    keccak_256(begin, byte_len, h.data());
+    keccak_256(begin,  static_cast<unsigned int>(byte_len), h.data());
     return h;
   }
 
